@@ -112,16 +112,16 @@ for (i in 1:length(taxNames)) {
 }
 ```
 
-Site trajectories
+Site trajectories (removed for now to keep file size down)
 --------------------------------------------------------
 ```{r}
-allsites = unique(sitesf)
-for (i in 1:length(allsites)) {
-  siteID= which(sitesf==allsites[i])
-  plot(poll.som, type="dist.neighbours", keepMargins=TRUE, main=allsites[i])
-  # add.cluster.boundaries(poll.som, som.clus)
-  site.crd <- poll.som$grid$pts[poll.som$unit.classif,][siteID,]
-  lines(site.crd, lwd=2)
-  points(jitter(site.crd))
-}
+# allsites = unique(sitesf)
+# for (i in 1:length(allsites)) {
+#   siteID= which(sitesf==allsites[i])
+#   plot(poll.som, type="dist.neighbours", keepMargins=TRUE, main=allsites[i])
+#   # add.cluster.boundaries(poll.som, som.clus)
+#   site.crd <- poll.som$grid$pts[poll.som$unit.classif,][siteID,]
+#   lines(site.crd, lwd=2)
+#   points(jitter(site.crd))
+# }
 ```
