@@ -1,0 +1,188 @@
+Self Organizing Maps - Great Lakes Pollen Data - Large SOM
+========================================================
+
+Libraries and initialization
+--------------------------------------------------------
+```{r message=FALSE}
+set.seed(3980)
+
+require(spdep)
+require(kohonen)
+require(RColorBrewer)
+require(ggplot2)
+require(reshape2)
+```
+
+Pre-processing
+--------------------------------------------------------
+
+First step is to read in the data and convert to percentages. Steps:
+
+- Read in data
+- Remove the data from Benfield (until we can figure out what the problem is)
+- Convert to percentages
+- Sqrt transformation to downweight the over-represented taxa.
+
+```{r}
+gl <- read.csv("./Data/GreatLakesAll_500.csv")
+sitesf <- as.factor(substr(gl$Sample,0,4))
+ages <- gl$YrBP
+```
+
+Extract pollen
+```{r}
+poll <- gl[,3:24]
+pollSum <- apply(poll,1,sum)
+poll <- poll/pollSum*100
+poll.s<- sqrt(poll)
+```
+
+Quick boxplot to check values
+```{r message=FALSE}
+plot.df = melt(poll.s, variable.name = "Taxa", value.name = "Abundance")
+x = ggplot(plot.df, aes(x=Taxa, y=Abundance)) + geom_boxplot() 
+x = x + ggtitle("All abundance values") + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+print(x)
+```
+
+Self-organizing map
+--------------------------------------------------------
+Start here by building the grid. We use a large grid and then re-cluster (k-means) afterwards. 
+```{r}
+gridX<-16
+gridY<-15
+grid.som <-somgrid(gridX, gridY, "hexagonal")
+```
+
+Build SOM, using standard unsupervised mapping, and plot the codebook vectors
+```{r cache=FALSE}
+poll.som <- som(as.matrix(poll.s), grid = grid.som, rlen=1000)
+plot(poll.som, codeRendering="stars")
+```
+
+Visualisation
+--------------------------------------------------------
+
+- Fit of SOM during training
+```{r}
+plot(poll.som, type="changes")
+```
+
+- Number of samples per node - note that not all nodes are full
+```{r}
+plot(poll.som, type="counts")
+```
+
+- Distance to neighbors
+```{r}
+plot(poll.som, type="dist.neighbours")
+```
+
+- Shade by mean age
+```{r}
+myRCBage = function(n, pal="YlGnBu") {
+  brewer.pal(n, pal)
+}
+nnodes = gridX*gridY
+nodeAge = rep(NA, nnodes)
+for (i in 1:nnodes) {
+  nodeID = which(poll.som$unit.classif == i)
+  if (length(nodeID) >0) {
+    nodeAge[i] = mean(ages[nodeID])
+  }
+}
+
+plot(poll.som, type="property", property=nodeAge/1000, main="Mean node age in ka BP",
+     palette.name=myRCBage, ncolors=9)
+#add.cluster.boundaries(poll.som, poll.som.kmean$cluster)
+```
+
+## Clusters
+
+Use `skater()` from the **spdep** package to get contiguous clusters. Start by making the neighborhood structure:
+```{r}
+som.nb = graph2nb(gabrielneigh(grid.som$pts),sym=TRUE)
+#plot(som.nb, grid.som$pts)
+```
+
+Make minimum spanning tree by converting this to a weight matrix with wieghts based on node dissimilarity:
+```{r}
+lcosts <- nbcosts(som.nb, poll.som$codes[[1]])
+nb.w <- nb2listw(som.nb, lcosts, style="B")
+```
+
+Find the minimum spanning tree:
+```{r}
+nbclus = 6
+som.mst <- mstree(nb.w,nbclus-1)
+plot(som.mst, grid.som$pts, col=2,       
+     cex.lab=.7, cex.circles=0.035, fg="blue")
+```
+
+Now find groups with no restriction
+```{r}
+som.skat <- skater(som.mst[,1:2], poll.som$codes[[1]], ncuts=(nbclus-1))
+som.clus = som.skat$groups
+table(som.clus)
+```
+
+Make a quick skater plot (can drop this):
+```{r}
+plot(som.skat, grid.som$pts, cex.circles=0.035, cex.lab=.7)
+```
+
+And finally plot this back out on the SOM:
+```{r}
+myRCBcls = function(n, pal="Dark2") {
+  brewer.pal(n, pal)
+}
+plot(poll.som, type="property", property=as.numeric(som.clus), main="Cluster map", 
+     palette.name=myRCBcls, ncolors=nbclus, heatkeywidth = .5)
+add.cluster.boundaries(poll.som, som.clus)
+```
+
+```{r}
+plot.df = cbind(melt(poll.som$codes[[1]], varnames = c("Grid","Taxa"),
+                     value.name = "Score"), Clus=as.factor(rep(som.clus, 22)))
+
+x = ggplot(plot.df, aes(x=Taxa, y=Score, fill=Clus)) + geom_boxplot() + facet_wrap(~Clus)
+x = x + ggtitle("All abundance values") + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+print(x)
+```
+
+```{r}
+plot.df = data.frame(age=nodeAge, cluster=as.factor(som.clus))
+x = ggplot(plot.df, aes(x=reorder(cluster, age*-1, FUN=median, na.rm=TRUE), y=age, fill=cluster)) + geom_boxplot()
+x = x + theme_bw() + scale_x_discrete("Cluster") + scale_y_continuous("Age BP")
+x = x + ggtitle("Cluster occurrence by age")
+print(x)
+```
+
+Taxon maps
+--------------------------------------------------------
+How do variables map to the SOM? 
+```{r}
+myRCBpol = function(n, pal="Greens") {
+  brewer.pal(n, pal)
+}
+taxNames = names(poll)
+for (i in 1:length(taxNames)) {
+  plot(poll.som, type="property", property=poll.som$codes[[1]][,taxNames[i]], main=taxNames[i], 
+       palette.name=myRCBpol, ncolors=9)
+  add.cluster.boundaries(poll.som, som.clus)
+}
+```
+
+Site trajectories
+--------------------------------------------------------
+```{r}
+# allsites = unique(sitesf)
+# for (i in 1:length(allsites)) {
+#   siteID= which(sitesf==allsites[i])
+#   plot(poll.som, type="dist.neighbours", keepMargins=TRUE, main=allsites[i])
+#   add.cluster.boundaries(poll.som, som.clus)
+#   site.crd <- poll.som$grid$pts[poll.som$unit.classif,][siteID,]
+#   lines(site.crd, lwd=2)
+#   points(jitter(site.crd))
+# }
+```
