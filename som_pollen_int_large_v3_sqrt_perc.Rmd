@@ -97,6 +97,30 @@ plot(poll.som, type="property", property=nodeAge/1000, main="Mean node age in ka
 #add.cluster.boundaries(poll.som, poll.som.kmean$cluster)
 ```
 
+- Shade by mean age with interpolation (simple averaging)
+```{r}
+myRCBage = function(n, pal="YlGnBu") {
+  brewer.pal(n, pal)
+}
+nnodes = gridX*gridY
+nodeAge = rep(NA, nnodes)
+grid.dist = unit.distances(poll.som$grid)
+for (i in 1:nnodes) {
+  nodeID = which(poll.som$unit.classif == i)
+  if (length(nodeID) >0) {
+    nodeAge[i] = mean(ages[nodeID])
+  } else {
+    nID = which(grid.dist[i,] < 2)
+    nodeID = which(poll.som$unit.classif %in% nID)
+    nodeAge[i] = mean(ages[nodeID], na.rm=TRUE)
+  }
+}
+
+plot(poll.som, type="property", property=nodeAge/1000, main="Mean node age in ka BP",
+     palette.name=myRCBage, ncolors=9)
+#add.cluster.boundaries(poll.som, poll.som.kmean$cluster)
+```
+
 ## Clusters
 
 Use `skater()` from the **spdep** package to get contiguous clusters. Start by making the neighborhood structure:
